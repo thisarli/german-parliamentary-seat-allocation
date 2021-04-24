@@ -1,5 +1,9 @@
+# Imports
+
 import pandas as pd
 import numpy as np
+
+# Functions
 
 def sainte_lague(values, target):
   divisor=values.sum()/target
@@ -24,11 +28,8 @@ def get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahl
   wahlkreissitze_pro_partei_pro_bundesland = wahlkreissitze_pro_partei_pro_bundesland.pivot(index="Sieger", columns="Bundesland", values="counts").fillna(0.)
   return wahlkreissitze_pro_partei_pro_bundesland
 
-
-
 def get_sitze_pro_bundesland(bevoelkerung_pro_bundesland,anzahl_sitze_parlament=598.0):
   return sainte_lague(bevoelkerung_pro_bundesland,anzahl_sitze_parlament)
-
 
 def get_qualifizierte_parteien(erststimmen_pro_partei_pro_wahlkreis,zweitstimmen_pro_partei_pro_wahlkreis):
   funf_prozent_berechnung=zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:]/zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:].sum()
@@ -36,8 +37,6 @@ def get_qualifizierte_parteien(erststimmen_pro_partei_pro_wahlkreis,zweitstimmen
   wahlkreis_hurde_berechnung=get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis).sum(axis=1)
   parteien_min_drei_wahlkreise=wahlkreis_hurde_berechnung.where(wahlkreis_hurde_berechnung.values>=3).dropna().index.tolist()
   return list(set(parteien_mehr_als_funf_prozent+parteien_min_drei_wahlkreise))
-
-
 
 def get_listensitze_pro_partei_pro_bundesland(sitze_pro_bundesland, zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien):
   zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien]
@@ -99,8 +98,6 @@ def run_bundestagssitz_verteilung(bevoelkerung_pro_bundesland,erststimmen_pro_pa
   gesamtzahl_bundestagssitze_pro_partei=get_gesamtzahl_bundestagssitze_pro_partei(mindestsitzzahlen_pro_partei_pro_bundesland,zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien)
   sitze_pro_bundesland_pro_partei_final=get_sitze_pro_bundesland_pro_partei_final(zweitstimmen_pro_partei_pro_wahlkreis,qualifizierte_parteien,wahlkreissitze_pro_partei_pro_bundesland,gesamtzahl_bundestagssitze_pro_partei)
   return sitze_pro_bundesland_pro_partei_final
-
-
 
 # Load sample data
 

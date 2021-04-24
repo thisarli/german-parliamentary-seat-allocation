@@ -1,0 +1,118 @@
+import pandas as pd
+import numpy as np
+
+def sainte_lague(values, target):
+  divisor=values.sum()/target
+  allocations = round(values/divisor)
+  if allocations.sum().squeeze() == target:
+    return allocations
+  elif allocations.sum().squeeze() < target:
+    while allocations.sum().squeeze()<target:
+      divisor*=0.999
+      allocations = round(values/divisor)
+    return allocations
+  elif allocations.sum().squeeze()>target:
+    while allocations.sum().squeeze()>target:
+      divisor*=1.001
+      allocations = round(values/divisor)
+    return allocations
+
+def get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis):
+  interim=erststimmen_pro_partei_pro_wahlkreis.copy()
+  interim['Sieger']=interim.iloc[:,1:].idxmax(axis=1)
+  wahlkreissitze_pro_partei_pro_bundesland=interim.groupby(['Bundesland', 'Sieger']).size().reset_index(name='counts')
+  wahlkreissitze_pro_partei_pro_bundesland = wahlkreissitze_pro_partei_pro_bundesland.pivot(index="Sieger", columns="Bundesland", values="counts").fillna(0.)
+  return wahlkreissitze_pro_partei_pro_bundesland
+
+
+
+def get_sitze_pro_bundesland(bevoelkerung_pro_bundesland,anzahl_sitze_parlament=598.0):
+  return sainte_lague(bevoelkerung_pro_bundesland,anzahl_sitze_parlament)
+
+
+def get_qualifizierte_parteien(erststimmen_pro_partei_pro_wahlkreis,zweitstimmen_pro_partei_pro_wahlkreis):
+  funf_prozent_berechnung=zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:]/zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:].sum()
+  parteien_mehr_als_funf_prozent=funf_prozent_berechnung.where(funf_prozent_berechnung.values>=0.05).dropna().index.tolist()
+  wahlkreis_hurde_berechnung=get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis).sum(axis=1)
+  parteien_min_drei_wahlkreise=wahlkreis_hurde_berechnung.where(wahlkreis_hurde_berechnung.values>=3).dropna().index.tolist()
+  return list(set(parteien_mehr_als_funf_prozent+parteien_min_drei_wahlkreise))
+
+
+
+def get_listensitze_pro_partei_pro_bundesland(sitze_pro_bundesland, zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien):
+  zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien]
+  d={}
+  for i in sitze_pro_bundesland.transpose():
+    d[i]=sainte_lague(zweitstimmen_pro_q_partei_pro_bundesland.transpose()[i].to_frame(),sitze_pro_bundesland.transpose()[i].values[0])
+  listensitze_pro_partei_pro_bundesland=pd.concat(d, axis=1).sum(axis=1, level=0)
+  return listensitze_pro_partei_pro_bundesland
+
+def get_mindestsitzzahlen_pro_partei_pro_bundesland(wahlkreissitze_pro_partei_pro_bundesland,listensitze_pro_partei_pro_bundesland):
+  return pd.concat([wahlkreissitze_pro_partei_pro_bundesland, listensitze_pro_partei_pro_bundesland]).max(level=0)
+
+def get_gesamtzahl_bundestagssitze_pro_partei(mindestsitzzahlen_pro_partei_pro_bundesland,zweitstimmen_pro_partei_pro_wahlkreis,qualifizierte_parteien):
+  mindestsitzzahlen_pro_partei=mindestsitzzahlen_pro_partei_pro_bundesland.sum(axis=1).to_frame().sort_index()
+  zweitstimmen_pro_q_partei=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien].sum().to_frame()
+  divisor=zweitstimmen_pro_q_partei.sum()/mindestsitzzahlen_pro_partei.sum()
+  allocations=round(zweitstimmen_pro_q_partei/divisor).sort_index()
+  if ((allocations >= mindestsitzzahlen_pro_partei)*1).all()[0] == True:
+    return allocations
+  else:
+    while ((allocations >= mindestsitzzahlen_pro_partei)*1).all()[0] == False:
+      divisor*=0.9999
+      allocations=round(zweitstimmen_pro_q_partei/divisor).sort_index()
+    return allocations
+
+def sainte_lague_final(values, minima, target):
+  divisor=values.sum()/target
+  allocations = round(values/divisor)
+  interim = pd.concat([allocations, minima]).max(level=0)
+  if interim.sum() == target:
+    return interim
+  elif interim.sum() < target:
+    while interim.sum()<target:
+      divisor*=0.999
+      allocations = round(values/divisor)
+      interim = pd.concat([allocations, minima]).max(level=0)
+    return interim
+  elif interim.sum()>target:
+    while interim.sum()>target:
+      divisor*=1.001
+      allocations = round(values/divisor)
+      interim = pd.concat([allocations, minima]).max(level=0)
+    return interim
+
+def get_sitze_pro_bundesland_pro_partei_final(zweitstimmen_pro_partei_pro_wahlkreis,qualifizierte_parteien,wahlkreissitze_pro_partei_pro_bundesland,gesamtzahl_bundestagssitze_pro_partei):
+  zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien]
+  d={}
+  for i in qualifizierte_parteien:
+    d[i]=sainte_lague_final(zweitstimmen_pro_q_partei_pro_bundesland[i], wahlkreissitze_pro_partei_pro_bundesland.transpose()[i],gesamtzahl_bundestagssitze_pro_partei.transpose()[i][0])
+  sitze_pro_bundesland_pro_partei_final= pd.concat(d, axis=1).sum(axis=1, level=0)
+  return sitze_pro_bundesland_pro_partei_final
+
+def run_bundestagssitz_verteilung(bevoelkerung_pro_bundesland,erststimmen_pro_partei_pro_wahlkreis,zweitstimmen_pro_partei_pro_wahlkreis):
+  wahlkreissitze_pro_partei_pro_bundesland=get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis)
+  sitze_pro_bundesland=get_sitze_pro_bundesland(bevoelkerung_pro_bundesland,anzahl_sitze_parlament=598.0)
+  qualifizierte_parteien=get_qualifizierte_parteien(erststimmen_pro_partei_pro_wahlkreis,zweitstimmen_pro_partei_pro_wahlkreis)
+  listensitze_pro_partei_pro_bundesland=get_listensitze_pro_partei_pro_bundesland(sitze_pro_bundesland, zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien)
+  mindestsitzzahlen_pro_partei_pro_bundesland=get_mindestsitzzahlen_pro_partei_pro_bundesland(wahlkreissitze_pro_partei_pro_bundesland,listensitze_pro_partei_pro_bundesland)
+  gesamtzahl_bundestagssitze_pro_partei=get_gesamtzahl_bundestagssitze_pro_partei(mindestsitzzahlen_pro_partei_pro_bundesland,zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien)
+  sitze_pro_bundesland_pro_partei_final=get_sitze_pro_bundesland_pro_partei_final(zweitstimmen_pro_partei_pro_wahlkreis,qualifizierte_parteien,wahlkreissitze_pro_partei_pro_bundesland,gesamtzahl_bundestagssitze_pro_partei)
+  return sitze_pro_bundesland_pro_partei_final
+
+
+
+# Load sample data
+
+bevoelkerung_pro_bundesland = pd.read_csv('population_germany.csv')
+bevoelkerung_pro_bundesland = bevoelkerung_pro_bundesland.set_index('Unnamed: 0')
+
+erststimmen_pro_partei_pro_wahlkreis=pd.read_csv('erststimmen_pro_partei_pro_wahlkreis.csv')
+erststimmen_pro_partei_pro_wahlkreis = erststimmen_pro_partei_pro_wahlkreis.set_index('Wahlkreis')
+
+zweitstimmen_pro_partei_pro_wahlkreis=pd.read_csv('zweitstimmen_pro_partei_pro_wahlkreis.csv')
+zweitstimmen_pro_partei_pro_wahlkreis = zweitstimmen_pro_partei_pro_wahlkreis.set_index('Wahlkreis')
+
+# Run allocation
+
+run_bundestagssitz_verteilung(bevoelkerung_pro_bundesland,erststimmen_pro_partei_pro_wahlkreis,zweitstimmen_pro_partei_pro_wahlkreis)

@@ -6,6 +6,20 @@ import numpy as np
 # Functions
 
 def sainte_lague(values, target):
+  """
+  Run an allocation based on the Sainte Lague / Webster method.
+  
+  Parameters
+  ----------
+  values: pandas.DataFrame with one column
+      The initial data (e.g. population, votes) per index element, based on which allocation is done.
+  target: float
+      The total number of items (e.g. seats) to be  distributed.
+  Returns
+  -------
+  allocations: pd.DataFrame
+      Returns a DataFrame containing the Sainte Lague coonverted allocations per index element.
+  """
   divisor=values.sum()/target
   allocations = round(values/divisor)
   if allocations.sum().squeeze() == target:
@@ -22,21 +36,66 @@ def sainte_lague(values, target):
     return allocations
 
 def get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis):
+  """
+  Determine how many Wahlkreissitze each party gets per Bundesland, based on Erststimmen per Wahlkreis.
+  In each Wahlkreis, the winning party is determined by simple majority.
+  
+  Parameters
+  ----------
+  erststimmen_pro_partei_pro_wahlkreis: pandas.DataFrame 
+      Index: Wahlkreis. First Column: Bundesland. Remaining columns: number of Erststimmen for each party.
+  Returns
+  -------
+  wahlkreissitze_pro_partei_pro_bundesland: pd.DataFrame
+      Returns a DataFrame containing the number of won Wahlkreise per party per Bundesland.
+      Index: party. Columns: Bundesland
+  """
   interim=erststimmen_pro_partei_pro_wahlkreis.copy()
-  interim['Sieger']=interim.iloc[:,1:].idxmax(axis=1)
-  wahlkreissitze_pro_partei_pro_bundesland=interim.groupby(['Bundesland', 'Sieger']).size().reset_index(name='counts')
+  interim['Sieger']=interim.iloc[:,1:].idxmax(axis=1) #determine winning party per Wahlkreis based on highest number of Erststimmen
+  wahlkreissitze_pro_partei_pro_bundesland=interim.groupby(['Bundesland', 'Sieger']).size().reset_index(name='counts') #group by Bundesland
   wahlkreissitze_pro_partei_pro_bundesland = wahlkreissitze_pro_partei_pro_bundesland.pivot(index="Sieger", columns="Bundesland", values="counts").fillna(0.)
   return wahlkreissitze_pro_partei_pro_bundesland
 
 def get_sitze_pro_bundesland(bevoelkerung_pro_bundesland,anzahl_sitze_parlament=598.0):
-  return sainte_lague(bevoelkerung_pro_bundesland,anzahl_sitze_parlament)
+  """
+  Determine initial number of parliamentary seats per Bundesland, based on the population per bundesland and the regular number of seats in parliament (default: 598).
+  The allocation method is Sainte Lague.
+  
+  Parameters
+  ----------
+  bevoelkerung_pro_bundesland: pandas.DataFrame (one column)
+      Index: Bundesland. Column: population
+  Returns
+  -------
+  sitze_pro_bundesland: pd.DataFrame
+      Returns a DataFrame containing the initial number of parliamentary seats per Bundesland (ignoring Überhangs-/Ausgleichsmandate).
+      Index: Bundesland. Columns: Parliamentary seats
+  """
+  sitze_pro_bundesland=sainte_lague(bevoelkerung_pro_bundesland,anzahl_sitze_parlament)
+  return sitze_pro_bundesland
 
 def get_qualifizierte_parteien(erststimmen_pro_partei_pro_wahlkreis,zweitstimmen_pro_partei_pro_wahlkreis):
-  funf_prozent_berechnung=zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:]/zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:].sum()
-  parteien_mehr_als_funf_prozent=funf_prozent_berechnung.where(funf_prozent_berechnung.values>=0.05).dropna().index.tolist()
-  wahlkreis_hurde_berechnung=get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis).sum(axis=1)
-  parteien_min_drei_wahlkreise=wahlkreis_hurde_berechnung.where(wahlkreis_hurde_berechnung.values>=3).dropna().index.tolist()
-  return list(set(parteien_mehr_als_funf_prozent+parteien_min_drei_wahlkreise))
+  """
+  Determine the parties that get to participate in the allocation process.
+  To participate in the allocation process, a parrty needs to get either at least 5% of Zweitstimmen at Bundesebene, or at least 3 Direktmandate.
+  
+  Parameters
+  ----------
+  erststimmen_pro_partei_pro_wahlkreis: pandas.DataFrame 
+      Index: Wahlkreis. First Column: Bundesland. Remaining columns: number of Erststimmen for each party.
+  zweitstimmen_pro_partei_pro_wahlkreis: pandas.DataFrame
+      Index: Wahlkreis. First Column: Bundesland. Remaining columns: number of Erststimmen for each party.
+  Returns
+  -------
+  qualifizierte_parteien: list
+      Returns a list containing the parties that qualify for the allocation process in the Bundestag.
+  """
+  funf_prozent_berechnung=zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:]/zweitstimmen_pro_partei_pro_wahlkreis.sum()[1:].sum() #zweitstimmen per party divided by total number of zweitstimmen
+  parteien_mehr_als_funf_prozent=funf_prozent_berechnung.where(funf_prozent_berechnung.values>=0.05).dropna().index.tolist() #drop parties where % Zweitstimmen below 5% and get list of remaining parties
+  wahlkreis_hurde_berechnung=get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahlkreis).sum(axis=1) #calculate number of Wahlkreissitze per party on Bundesebene
+  parteien_min_drei_wahlkreise=wahlkreis_hurde_berechnung.where(wahlkreis_hurde_berechnung.values>=3).dropna().index.tolist() #drop parties that don't have at least 3 Wahlkreissitze, and get list of remaining parties
+  qualifizierte_parteien = list(set(parteien_mehr_als_funf_prozent+parteien_min_drei_wahlkreise)) #get union of the two lists
+  return qualifizierte_parteien
 
 def get_listensitze_pro_partei_pro_bundesland(sitze_pro_bundesland, zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien):
   zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien]

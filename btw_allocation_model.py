@@ -48,7 +48,7 @@ def get_wahlkreissitze_pro_partei_pro_bundesland(erststimmen_pro_partei_pro_wahl
   -------
   wahlkreissitze_pro_partei_pro_bundesland: pd.DataFrame
       Returns a DataFrame containing the number of won Wahlkreise per party per Bundesland.
-      Index: party. Columns: Bundesland
+      Index: party. Columns: Bundeslaender
   """
   interim=erststimmen_pro_partei_pro_wahlkreis.copy()
   interim['Sieger']=interim.iloc[:,1:].idxmax(axis=1) #determine winning party per Wahlkreis based on highest number of Erststimmen
@@ -98,15 +98,49 @@ def get_qualifizierte_parteien(erststimmen_pro_partei_pro_wahlkreis,zweitstimmen
   return qualifizierte_parteien
 
 def get_listensitze_pro_partei_pro_bundesland(sitze_pro_bundesland, zweitstimmen_pro_partei_pro_wahlkreis, qualifizierte_parteien):
-  zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien]
+  """
+  Determine the seats each party gets per Bundesland based on Zweitstimmen.
+  Only qualified parties can participate in this alocation step, which is based on Sainte Lague.
+  
+  Parameters
+  ----------
+  sitze_pro_bundesland: pd.DataFrame
+      Index: Bundesland. Columns: Parliamentary seats
+  zweitstimmen_pro_partei_pro_wahlkreis: pandas.DataFrame
+      Index: Wahlkreis. First Column: Bundesland. Remaining columns: number of Erststimmen for each party.
+  qualifizierte_parteien: list
+  Returns
+  -------
+  listensitze_pro_partei_pro_bundesland: pd.DataFrame
+      Returns  the seats each  qualified party gets, based on Zweitstimmen.
+      Index: parties. Columns: Bundeslaender
+  """
+  zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien] #find number of Zweitstimmen per qualified party per Bundesland
   d={}
-  for i in sitze_pro_bundesland.transpose():
+  for i in sitze_pro_bundesland.transpose(): #for each Bundesland, determine Listensitze per party, allocated through Sainte Lague
     d[i]=sainte_lague(zweitstimmen_pro_q_partei_pro_bundesland.transpose()[i].to_frame(),sitze_pro_bundesland.transpose()[i].values[0])
-  listensitze_pro_partei_pro_bundesland=pd.concat(d, axis=1).sum(axis=1, level=0)
+  listensitze_pro_partei_pro_bundesland=pd.concat(d, axis=1).sum(axis=1, level=0) #concatenate the dictionary into a dataframe with parties as index and Bundeslaender as columns
   return listensitze_pro_partei_pro_bundesland
 
 def get_mindestsitzzahlen_pro_partei_pro_bundesland(wahlkreissitze_pro_partei_pro_bundesland,listensitze_pro_partei_pro_bundesland):
-  return pd.concat([wahlkreissitze_pro_partei_pro_bundesland, listensitze_pro_partei_pro_bundesland]).max(level=0)
+  """
+  Determine the minimum number of seats per party per Bundesland.
+  This takes into account that a party cannot end up with fewer seats per Bundesland than that party has won in terms of Direktmandate (Erststimmen).
+  
+  Parameters
+  ----------
+  wahlkreissitze_pro_partei_pro_bundesland: pd.DataFrame
+      Index: party. Columns: Bundeslaender
+  listensitze_pro_partei_pro_bundesland: pd.DataFrame
+      Index: parties. Columns: Bundeslaender
+  Returns
+  -------
+  mindestsitzzahlen_pro_partei_pro_bundesland: pd.DataFrame
+      Returns DataFrame with minimum number of seats per party per Bundesland, based on the max between the seats according to Zweitstimmen via Sainte Lague and Direktmandaten.
+      Index: parties. Columns: Bundeslaender
+  """
+  mindestsitzzahlen_pro_partei_pro_bundesland = pd.concat([wahlkreissitze_pro_partei_pro_bundesland, listensitze_pro_partei_pro_bundesland]).max(level=0)
+  return mindestsitzzahlen_pro_partei_pro_bundesland
 
 def get_gesamtzahl_bundestagssitze_pro_partei(mindestsitzzahlen_pro_partei_pro_bundesland,zweitstimmen_pro_partei_pro_wahlkreis,qualifizierte_parteien):
   mindestsitzzahlen_pro_partei=mindestsitzzahlen_pro_partei_pro_bundesland.sum(axis=1).to_frame().sort_index()

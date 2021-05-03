@@ -178,7 +178,10 @@ def get_sitze_pro_bundesland_pro_partei_final(zweitstimmen_pro_partei_pro_wahlkr
   zweitstimmen_pro_q_partei_pro_bundesland=zweitstimmen_pro_partei_pro_wahlkreis.groupby('Bundesland').sum()[qualifizierte_parteien]
   d={}
   for i in qualifizierte_parteien:
-    d[i]=sainte_lague_final(zweitstimmen_pro_q_partei_pro_bundesland[i], wahlkreissitze_pro_partei_pro_bundesland.transpose()[i],gesamtzahl_bundestagssitze_pro_partei.transpose()[i][0])
+    try:
+      d[i]=sainte_lague_final(zweitstimmen_pro_q_partei_pro_bundesland[i], wahlkreissitze_pro_partei_pro_bundesland.transpose()[i],gesamtzahl_bundestagssitze_pro_partei.transpose()[i][0])
+    except KeyError:
+      d[i]=sainte_lague_final(zweitstimmen_pro_q_partei_pro_bundesland[i], zweitstimmen_pro_q_partei_pro_bundesland[i]*0,gesamtzahl_bundestagssitze_pro_partei.transpose()[i][0])
   sitze_pro_bundesland_pro_partei_final= pd.concat(d, axis=1).sum(axis=1, level=0)
   return sitze_pro_bundesland_pro_partei_final
 
@@ -202,6 +205,34 @@ erststimmen_pro_partei_pro_wahlkreis = erststimmen_pro_partei_pro_wahlkreis.set_
 
 zweitstimmen_pro_partei_pro_wahlkreis=pd.read_csv('zweitstimmen_pro_partei_pro_wahlkreis.csv')
 zweitstimmen_pro_partei_pro_wahlkreis = zweitstimmen_pro_partei_pro_wahlkreis.set_index('Wahlkreis')
+
+# Load and preprocess real data
+
+btw_2017 = pd.read_csv('btw2017_kerg.csv', skiprows=5, header=[0,1])
+
+bevoelkerung_pro_bundesland = pd.read_csv('population_germany_2017.csv')
+bevoelkerung_pro_bundesland = bevoelkerung_pro_bundesland.set_index('Unnamed: 0')
+
+bundesland_identifier = pd.read_csv('bundesland_identifier.csv') # Mapper from Bundesland to Bundesland number in BTW files according to Bundeswahlleiter
+bundesland_identifier = bundesland_identifier.set_index('Bundesland')
+
+bevoelkerung_pro_bundesland=pd.concat([bevoelkerung_pro_bundesland, bundesland_identifier], axis=1).set_index('Identifier') # Replace Bundesland name with Bundesland number (to correspond with use of Bundesland number in btw_year)
+
+def preprocess(btw_year):
+  descriptors=btw_year.iloc[:,0:3]
+  descriptors.columns = descriptors.columns.droplevel(0)
+  erststimmen_p_partei_p_wahlkreis= btw_year.xs('Erststimmen',axis=1,level=1).fillna(0)
+  zweitstimmen_p_partei_p_wahlkreis= btw_year.xs('Zweitstimmen',axis=1,level=1).fillna(0)
+  erststimmen_p_partei_p_wahlkreis=pd.concat([descriptors, erststimmen_p_partei_p_wahlkreis], axis=1)
+  zweitstimmen_p_partei_p_wahlkreis=pd.concat([descriptors, zweitstimmen_p_partei_p_wahlkreis], axis=1)
+  erststimmen_p_partei_p_wahlkreis=erststimmen_p_partei_p_wahlkreis.set_index('Nr')
+  zweitstimmen_p_partei_p_wahlkreis=zweitstimmen_p_partei_p_wahlkreis.set_index('Nr')
+  erststimmen_p_partei_p_wahlkreis=erststimmen_p_partei_p_wahlkreis.drop(['Gebiet'], axis=1)
+  zweitstimmen_p_partei_p_wahlkreis=zweitstimmen_p_partei_p_wahlkreis.drop(['Gebiet'], axis=1)
+  return erststimmen_p_partei_p_wahlkreis, zweitstimmen_p_partei_p_wahlkreis
+
+
+erststimmen_pro_partei_pro_wahlkreis, zweitstimmen_pro_partei_pro_wahlkreis = preprocess(btw_2017)
 
 # Run allocation
 
